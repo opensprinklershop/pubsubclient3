@@ -175,6 +175,7 @@
  */
 class PubSubClient : public Print {
    private:
+    static constexpr size_t MQTT_MAX_DOMAIN_LEN = 255;
     Client* _client{};
     uint8_t* _buffer{};
     size_t _bufferSize{};
@@ -187,7 +188,7 @@ class PubSubClient : public Print {
     bool _pingOutstanding{};
     MQTT_CALLBACK_SIGNATURE{};
     IPAddress _ip{};
-    char* _domain{};
+    char _domain[MQTT_MAX_DOMAIN_LEN + 1]{};
     uint16_t _port{};
     Stream* _stream{};
     int _state{MQTT_DISCONNECTED};
@@ -367,6 +368,18 @@ class PubSubClient : public Print {
      * @return The client instance, allowing the function to be chained.
      */
     PubSubClient& setServer(const char* domain, uint16_t port);
+
+    /**
+     * @brief Gets the currently configured server domain (if any).
+     * @return The server domain string, or nullptr if no domain is configured.
+     */
+    const char* getServer() const;
+
+    /**
+     * @brief Gets the currently configured server port.
+     * @return The server port.
+     */
+    uint16_t getPort() const;
 
     /**
      * @brief Sets the message callback function.

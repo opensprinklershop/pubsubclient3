@@ -10,6 +10,20 @@
 
 #include "PubSubClient.h"
 
+#if defined(ESP32)
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
+static SemaphoreHandle_t pubsub_dns_mutex = nullptr;
+
+static SemaphoreHandle_t get_pubsub_dns_mutex() {
+    if (!pubsub_dns_mutex) {
+        pubsub_dns_mutex = xSemaphoreCreateMutex();
+    }
+    return pubsub_dns_mutex;
+}
+#endif
+
 /**
  * @brief Macro to check if a string 's' can be safely added to the MQTT _buffer.
  *
@@ -106,7 +120,6 @@ PubSubClient::PubSubClient(const char* domain, uint16_t port, MQTT_CALLBACK_SIGN
 }
 
 PubSubClient::~PubSubClient() {
-    free(_domain);
     free(_buffer);
 }
 
@@ -119,8 +132,19 @@ bool PubSubClient::connect(const char* id, const char* user, const char* pass, c
         if (_client->connected()) {
             result = 1;
         } else if (_port != 0) {
-            if (_domain) {
+            if (_domain[0] != '\0') {
+#if defined(ESP32)
+                SemaphoreHandle_t dns_mutex = get_pubsub_dns_mutex();
+                if (dns_mutex) {
+                    xSemaphoreTake(dns_mutex, portMAX_DELAY);
+                }
                 result = _client->connect(_domain, _port);
+                if (dns_mutex) {
+                    xSemaphoreGive(dns_mutex);
+                }
+#else
+                result = _client->connect(_domain, _port);
+#endif
             } else {
                 result = _client->connect(_ip, _port);
             }
@@ -845,26 +869,28 @@ PubSubClient& PubSubClient::setServer(uint8_t* ip, uint16_t port) {
 PubSubClient& PubSubClient::setServer(IPAddress ip, uint16_t port) {
     _ip = ip;
     _port = port;
-    free(_domain);
-    _domain = nullptr;
+    _domain[0] = '\0';
     return *this;
 }
 
 PubSubClient& PubSubClient::setServer(const char* domain, uint16_t port) {
-    char* newDomain = nullptr;
-    if (domain) {
-        newDomain = (char*)realloc(_domain, strlen(domain) + 1);
-    }
-    if (newDomain) {
-        strcpy(newDomain, domain);
-        _domain = newDomain;
-        _port = port;
-    } else {
-        free(_domain);
-        _domain = nullptr;
+    if (!domain) {
+        _domain[0] = '\0';
         _port = 0;
+        return *this;
     }
+    strncpy(_domain, domain, MQTT_MAX_DOMAIN_LEN);
+    _domain[MQTT_MAX_DOMAIN_LEN] = '\0';
+    _port = port;
     return *this;
+}
+
+const char* PubSubClient::getServer() const {
+    return _domain[0] ? _domain : nullptr;
+}
+
+uint16_t PubSubClient::getPort() const {
+    return _port;
 }
 
 PubSubClient& PubSubClient::setCallback(MQTT_CALLBACK_SIGNATURE) {
@@ -883,22 +909,25 @@ PubSubClient& PubSubClient::setStream(Stream& stream) {
 }
 
 bool PubSubClient::setBufferSize(size_t size) {
-    if (size == 0) {
-        // Cannot set it back to 0
+    if (size == 0 || size > 65536) {
         return false;
     }
-    if (_bufferSize == 0) {
-        _buffer = (uint8_t*)malloc(size);
-    } else {
-        uint8_t* newBuffer = (uint8_t*)realloc(_buffer, size);
-        if (newBuffer) {
-            _buffer = newBuffer;
-        } else {
-            return false;
-        }
+    if (_bufferSize == size) {
+        return true;
     }
-    _bufferSize = size;
-    return (_buffer != nullptr);
+
+    uint8_t* newBuffer = (uint8_t*)malloc(size);
+    if (newBuffer) {
+        if (_buffer && _bufferSize > 0) {
+            size_t copy_size = (size < _bufferSize) ? size : _bufferSize;
+            memcpy(newBuffer, _buffer, copy_size);
+        }
+        free(_buffer);
+        _buffer = newBuffer;
+        _bufferSize = size;
+        return true;
+    }
+    return false;
 }
 
 size_t PubSubClient::getBufferSize() {
