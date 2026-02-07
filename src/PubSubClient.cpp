@@ -121,6 +121,8 @@ PubSubClient::PubSubClient(const char* domain, uint16_t port, MQTT_CALLBACK_SIGN
 
 PubSubClient::~PubSubClient() {
     free(_buffer);
+    if (_domain)
+        free(_domain);
 }
 
 bool PubSubClient::connect(const char* id, const char* user, const char* pass, const char* willTopic, uint8_t willQos, bool willRetain,
@@ -869,24 +871,29 @@ PubSubClient& PubSubClient::setServer(uint8_t* ip, uint16_t port) {
 PubSubClient& PubSubClient::setServer(IPAddress ip, uint16_t port) {
     _ip = ip;
     _port = port;
-    _domain[0] = '\0';
+    _domain = 0;
     return *this;
 }
 
 PubSubClient& PubSubClient::setServer(const char* domain, uint16_t port) {
     if (!domain) {
-        _domain[0] = '\0';
+        if (_domain) free(_domain);
+        _domain = 0;
         _port = 0;
         return *this;
     }
-    strncpy(_domain, domain, MQTT_MAX_DOMAIN_LEN);
-    _domain[MQTT_MAX_DOMAIN_LEN] = '\0';
     _port = port;
+    if (_domain && strcmp(_domain, domain) == 0) {
+        return *this;
+    }
+    if (_domain)
+        free(_domain);
+    _domain = strdup(domain);
     return *this;
 }
 
 const char* PubSubClient::getServer() const {
-    return _domain[0] ? _domain : nullptr;
+    return _domain;
 }
 
 uint16_t PubSubClient::getPort() const {

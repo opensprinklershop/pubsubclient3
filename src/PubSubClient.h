@@ -175,7 +175,6 @@
  */
 class PubSubClient : public Print {
    private:
-    static constexpr size_t MQTT_MAX_DOMAIN_LEN = 255;
     Client* _client{};
     uint8_t* _buffer{};
     size_t _bufferSize{};
@@ -188,7 +187,7 @@ class PubSubClient : public Print {
     bool _pingOutstanding{};
     MQTT_CALLBACK_SIGNATURE{};
     IPAddress _ip{};
-    char _domain[MQTT_MAX_DOMAIN_LEN + 1]{};
+    char* _domain{};
     uint16_t _port{};
     Stream* _stream{};
     int _state{MQTT_DISCONNECTED};
